@@ -52,9 +52,18 @@ def get_devices():
     devices = []
     for i, device in enumerate(device_list):
         if device["identifierInformation"]["type"] == "IDENTIFIER_ANDROID":
-            device_id = device["identifierInformation"]["phoneInformation"]["canonicIds"]["canonicId"][0]["id"]
+            print(f"HOLA: {device}")
+            device_id = (
+                device.get("identifierInformation", {})
+                .get("phoneInformation", {})
+                .get("canonicIds", {})
+                .get("canonicId", [{}])[0]
+                .get("id")
+            )
         else:
             device_id = device["identifierInformation"]["canonicIds"]["canonicId"][0]["id"]
+        if not device_id:
+            continue
         locations = get_location_data_for_device(device_id)
         latest = locations[-1] if locations else {}
 
@@ -97,8 +106,6 @@ def decrypt_location_response_locations(device_update_protobuf):
     for loc, time in zip(network_locations, network_locations_time):
 
         if loc.status == Common_pb2.Status.SEMANTIC:
-            # print("Semantic Location Report")
-
             wrapped_location = WrappedLocation(
                 decrypted_location=b'',
                 time=int(time.seconds),
@@ -130,11 +137,7 @@ def decrypt_location_response_locations(device_update_protobuf):
             )
             location_time_array.append(wrapped_location)
 
-    # print("-" * 40)
-    # print("[DecryptLocations] Decrypted Locations:")
-
     if not location_time_array:
-        # print("No locations found.")
         return []
 
     result = []
@@ -152,16 +155,6 @@ def decrypt_location_response_locations(device_update_protobuf):
             longitude = proto_loc.longitude / 1e7
             altitude = proto_loc.altitude
 
-            # print(f"Latitude: {latitude}")
-            # print(f"Longitude: {longitude}")
-            # print(f"Altitude: {altitude}")
-            # print(f"Google Maps Link: {create_google_maps_link(latitude, longitude)}")
-            
-        # print(f"Time: {datetime.datetime.fromtimestamp(loc.time).strftime('%Y-%m-%d %H:%M:%S')}")
-        # print(f"Status: {loc.status}")
-        # print(f"Is Own Report: {loc.is_own_report}")
-        # print("-" * 40)
-
         result.append({
             "latitude": latitude,
             "longitude": longitude,
@@ -172,6 +165,12 @@ def decrypt_location_response_locations(device_update_protobuf):
         })
     return result
 
+fcm = FcmReceiver()
+def print_location_update(response):
+    update = parse_device_update_protobuf(response)
+    locations = decrypt_location_response_locations(update)
+    print(f"[FCMReceiver] Received location update: {locations}")
+
 def get_location_data_for_device(canonic_device_id):
     request_uuid = generate_random_uuid()
 
@@ -181,7 +180,8 @@ def get_location_data_for_device(canonic_device_id):
         device_update = parse_device_update_protobuf(response)
         if device_update.fcmMetadata.requestUuid == request_uuid:
             result = parse_device_update_protobuf(response)
-    fcm_token = FcmReceiver().register_for_location_updates(handle_location_response)
+    fcm.register_for_location_updates(print_location_update)
+    fcm_token = fcm.register_for_location_updates(handle_location_response)
 
     hex_payload = create_location_request(canonic_device_id, fcm_token, request_uuid)
     nova_request(NOVA_ACTION_API_SCOPE, hex_payload)
