@@ -1,0 +1,7 @@
+# REST Framework
+fastapi
+uvicorn
+
+# Functional API
+voluptuous
+homeassistant
